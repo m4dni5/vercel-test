@@ -59,12 +59,6 @@ export async function chatFlow(messages: Msg[]) {
   }
 
   await dropAllTables();
-
-  // Stream a second message confirming the destructive action.
-  const agent2 = new DurableAgent({
-    model: mockTextModel(`DROPPED ALL TABLES — approved by ${approverId}`),
-  });
-  await agent2.stream({ messages: messages as never, writable: getWritable() });
 }
 
 /** The consequential destructive action, executed only after approval. */
