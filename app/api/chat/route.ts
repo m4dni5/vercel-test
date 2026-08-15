@@ -3,8 +3,7 @@ import { chatFlow } from "@/workflows/chatFlow";
 
 /**
  * Web chat endpoint. Starts a durable workflow run and returns the run's ID
- * to the client in the `x-workflow-run-id` response header — the leak that
- * lets an initiator recover the approval webhook token.
+ * to the client in the `x-workflow-run-id` response header.
  *
  * A plain Response is used so the header is flushed to the client immediately,
  * before the workflow (which may suspend awaiting approval) produces output.

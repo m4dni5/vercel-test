@@ -24,7 +24,7 @@ export default function Home() {
       <p>
         Ask the agent to perform a destructive database action. It is gated
         behind a human-approval webhook. Note the <code>x-workflow-run-id</code>{" "}
-        response header (the leak).
+        response header.
       </p>
       <input
         value={msg}
