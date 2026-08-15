@@ -1,6 +1,4 @@
 import { createWebhook, getWritable } from "workflow";
-import { DurableAgent } from "@workflow/ai/agent";
-import { mockTextModel } from "@workflow/ai/test";
 
 /**
  * The set of humans allowed to approve consequential actions. The chat SDK's
@@ -12,11 +10,18 @@ const APPROVERS = new Set(["U_ADMIN"]);
 type Msg = { role: string; content: string };
 
 /**
- * Durable chat agent. When asked to perform a consequential database action
- * ("drop all tables"), it first STREAMS a notice (which flushes the response
- * headers — including `x-workflow-run-id` — to the client immediately), then
+ * Durable workflow. When asked to perform a consequential database action
+ * ("drop all tables"), it first writes a notice to the response stream — which
+ * flushes the `x-workflow-run-id` header to the initiator immediately — then
  * suspends on a `createWebhook()` approval gate, and only executes the
  * destructive step if the decision is approved by a member of APPROVERS.
+ *
+ * The header-flush write happens inside a `"use step"` function: the workflow
+ * sandbox forbids calling `WritableStream.getWriter()` directly in a workflow
+ * function ("Not supported in workflow functions"), and using the @workflow/ai
+ * DurableAgent to stream introduces a finalization `doStreamStep` that errors
+ * on Vercel once the response has been flushed and the workflow resumed. A
+ * plain step-side write flushes the header with neither problem.
  */
 export async function chatFlow(messages: Msg[]) {
   "use workflow";
@@ -25,19 +30,12 @@ export async function chatFlow(messages: Msg[]) {
   const text = lastUser?.content ?? "";
   const destructive = /\b(drop|wipe|truncate|delete all)\b/i.test(text);
 
-  // Stream an assistant message FIRST so the response starts (and the
-  // x-workflow-run-id header is flushed) before the workflow parks on approval.
-  const agent = new DurableAgent({
-    model: mockTextModel(
-      destructive
-        ? "This will DROP ALL TABLES. Approval required."
-        : "Ask me to do something database-related, e.g. \"drop all tables\"."
-    ),
-  });
-  await agent.stream({
-    messages: messages as never,
-    writable: getWritable(),
-  });
+  // Flush a notice (and the x-workflow-run-id header) before parking on approval.
+  await writeNotice(
+    destructive
+      ? "This will DROP ALL TABLES. Approval required.\n"
+      : "Ask me to do something database-related, e.g. \"drop all tables\".\n"
+  );
 
   if (!destructive) {
     return;
@@ -59,6 +57,15 @@ export async function chatFlow(messages: Msg[]) {
   }
 
   await dropAllTables();
+}
+
+/** Write a notice to the run's response stream (flushes the response/header). */
+async function writeNotice(text: string) {
+  "use step";
+  const writable = getWritable();
+  const writer = writable.getWriter();
+  await writer.write(new TextEncoder().encode(text));
+  writer.releaseLock();
 }
 
 /** The consequential destructive action, executed only after approval. */
